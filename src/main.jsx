@@ -250,7 +250,7 @@ function Sidebar({ section, setSection, theme, setTheme, onLogout, invoiceCount,
   )
 }
 
-function MobileHeader({ section, setSection, theme, setTheme, onLogout }) {
+function MobileHeader({ theme, setTheme, onLogout }) {
   return (
     <header className="mobile-header">
       <Logo compact />
@@ -262,11 +262,30 @@ function MobileHeader({ section, setSection, theme, setTheme, onLogout }) {
           <Icon name="logout" size={17} />
         </button>
       </div>
-      <div className="mobile-nav">
-        <button className={section === 'invoices' ? 'active' : ''} onClick={() => setSection('invoices')}>Invoices</button>
-        <button className={section === 'profiles' ? 'active' : ''} onClick={() => setSection('profiles')}>Profiles</button>
-      </div>
     </header>
+  )
+}
+
+function MobileNav({ section, setSection }) {
+  return (
+    <nav className="mobile-nav" aria-label="Workspace sections">
+      <button
+        className={section === 'invoices' ? 'active' : ''}
+        aria-current={section === 'invoices' ? 'page' : undefined}
+        onClick={() => setSection('invoices')}
+      >
+        <Icon name="receipt" size={19} />
+        <span>Invoices</span>
+      </button>
+      <button
+        className={section === 'profiles' ? 'active' : ''}
+        aria-current={section === 'profiles' ? 'page' : undefined}
+        onClick={() => setSection('profiles')}
+      >
+        <Icon name="bank" size={19} />
+        <span>Profiles</span>
+      </button>
+    </nav>
   )
 }
 
@@ -687,7 +706,7 @@ function AdminApp({ onLogout }) {
     <div className="admin-app">
       <Sidebar section={section} setSection={(value) => { setSection(value); setEditor(null) }} theme={theme} setTheme={setTheme} onLogout={logout} invoiceCount={invoices.length} profileCount={profiles.length} />
       <div className="admin-main">
-        <MobileHeader section={section} setSection={(value) => { setSection(value); setEditor(null) }} theme={theme} setTheme={setTheme} onLogout={logout} />
+        <MobileHeader theme={theme} setTheme={setTheme} onLogout={logout} />
         <main className="admin-content">
           {editorContent || (section === 'invoices' ? (
             <InvoicesView invoices={invoices} profiles={profiles} onCompose={() => setEditor({ type: 'invoice' })} onCopy={(url) => copy(url, 'Public invoice link copied.')} onTogglePaid={togglePaid} onDelete={deleteInvoice} onOpen={openPublic} />
@@ -696,6 +715,7 @@ function AdminApp({ onLogout }) {
           ))}
         </main>
         <footer className="admin-footer"><span>Built for clear Xoom transfers</span><span>v1.0 · Local workspace</span></footer>
+        <MobileNav section={section} setSection={(value) => { setSection(value); setEditor(null) }} />
       </div>
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
     </div>
