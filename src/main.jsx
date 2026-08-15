@@ -59,15 +59,6 @@ function addDays(days) {
   return date.toISOString().slice(0, 10)
 }
 
-function encodePublicInvoice(payload) {
-  const bytes = new TextEncoder().encode(JSON.stringify(payload))
-  let binary = ''
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte)
-  })
-  return window.btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '')
-}
-
 function decodePublicInvoice(token) {
   try {
     const padded = token.replaceAll('-', '+').replaceAll('_', '/') + '='.repeat((4 - (token.length % 4)) % 4)
@@ -604,7 +595,7 @@ function AdminApp({ onLogout }) {
     showToast('Receiving profile deleted.')
   }
 
-  function saveInvoice(input) {
+  async function saveInvoice(input) {
     const profile = profiles.find((item) => item.id === input.profileId)
     if (!profile) return
     const invoiceNumber = `INV-${String(Date.now()).slice(-6)}`
@@ -637,7 +628,21 @@ function AdminApp({ onLogout }) {
         accountNumber: profile.accountNumber,
       },
     }
-    invoice.publicToken = encodePublicInvoice(snapshot)
+    try {
+      const response = await fetch('/api/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.slug) {
+        throw new Error(result?.error || 'The public link could not be created.')
+      }
+      invoice.publicToken = result.slug
+    } catch (error) {
+      showToast(error?.message || 'The public link could not be created. Check the storage setup and try again.')
+      return
+    }
     setInvoices((current) => [invoice, ...current])
     setEditor(null)
     setSection('invoices')
@@ -650,7 +655,11 @@ function AdminApp({ onLogout }) {
   }
 
   function deleteInvoice(id) {
-    if (!window.confirm('Delete this invoice? The public link will stop being listed here.')) return
+    if (!window.confirm('Delete this invoice? The public link will stop working.')) return
+    const target = invoices.find((invoice) => invoice.id === id)
+    if (target?.publicToken && /^[A-Z0-9-]{4,40}$/i.test(target.publicToken)) {
+      fetch(`/api/invoice/${encodeURIComponent(target.publicToken)}`, { method: 'DELETE' }).catch(() => {})
+    }
     setInvoices((current) => current.filter((invoice) => invoice.id !== id))
     showToast('Invoice deleted.')
   }
@@ -788,13 +797,65 @@ function PublicNotFound() {
   return <main className="public-page not-found-page"><div className="not-found-card"><Logo /><p className="eyebrow">Link unavailable</p><h1>This invoice<br /><em>isn't here.</em></h1><p>The link may be incomplete or no longer valid. Ask the sender for a fresh payment request.</p></div></main>
 }
 
+function PublicLoading() {
+  return (
+    <main className="public-page not-found-page">
+      <div className="not-found-card loading-state" aria-busy="true">
+        <Logo />
+        <p className="eyebrow">Payment request</p>
+        <h1>Opening<br /><em>invoice</em></h1>
+        <p><span className="loading-dots"><i /><i /><i /></span></p>
+      </div>
+    </main>
+  )
+}
+
+function PublicInvoicePage({ slug }) {
+  const [state, setState] = useState('loading')
+  const [invoice, setInvoice] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    fetch(`/api/invoice/${encodeURIComponent(slug)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error('unavailable')
+        return response.json()
+      })
+      .then((data) => {
+        if (!active) return
+        if (!data?.profile || !data?.clientName || !data?.amount) throw new Error('invalid')
+        setInvoice(data)
+        setState('ready')
+      })
+      .catch(() => {
+        if (active) setState('missing')
+      })
+    return () => {
+      active = false
+    }
+  }, [slug])
+
+  if (state === 'loading') return <PublicLoading />
+  if (state === 'missing' || !invoice) return <PublicNotFound />
+  return <PublicInvoice invoice={invoice} />
+}
+
 function App() {
   const [authenticated, setAuthenticated] = useState(() => readJson(STORAGE_KEYS.session, false) === true)
   return authenticated ? <AdminApp onLogout={() => setAuthenticated(false)} /> : <Login onSuccess={() => setAuthenticated(true)} />
 }
 
 const path = window.location.pathname
-const publicToken = path.startsWith('/invoice/') ? path.slice('/invoice/'.length).split('/')[0] : ''
-const publicInvoice = publicToken ? decodePublicInvoice(publicToken) : null
+const rawToken = path.startsWith('/invoice/') ? path.slice('/invoice/'.length).split('/')[0] : ''
+const isSlug = /^[A-Z0-9-]{4,40}$/i.test(rawToken)
+const publicInvoice = rawToken && !isSlug ? decodePublicInvoice(rawToken) : null
 
-createRoot(document.getElementById('root')).render(publicToken ? (publicInvoice ? <PublicInvoice invoice={publicInvoice} /> : <PublicNotFound />) : <App />)
+createRoot(document.getElementById('root')).render(
+  rawToken
+    ? isSlug
+      ? <PublicInvoicePage slug={rawToken.toUpperCase()} />
+      : publicInvoice
+        ? <PublicInvoice invoice={publicInvoice} />
+        : <PublicNotFound />
+    : <App />
+)

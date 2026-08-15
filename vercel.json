@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/invoice/([^/]+)", "destination": "/api/invoice?slug=$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
